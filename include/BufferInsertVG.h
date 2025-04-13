@@ -59,6 +59,8 @@ struct Node {
   };
   Node(int ID, const Params &CRAT) : ID(ID) {
     CapsRATs = {CRAT};
+    Left = nullptr;
+    Right = nullptr;
   }
 };
 
