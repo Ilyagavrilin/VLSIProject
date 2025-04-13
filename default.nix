@@ -10,7 +10,7 @@ pkgs.stdenv.mkDerivation {
 
   src = ./.;
 
-  nativeBuildInputs = with pkgs; [ cmake ];
+  nativeBuildInputs = with pkgs; [ cmake nlohmann_json ];
 
   buildInputs = [ ];
 
