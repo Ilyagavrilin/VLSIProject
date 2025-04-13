@@ -85,3 +85,9 @@ if(LINUX)
         -Wl,--no-undefined # Fail if there are any unresolved symbols in the final linked output
     )
 endif()
+
+
+include_directories(${CMAKE_SOURCE_DIR}/include)			
+add_compile_options(-Wall -std=c++2a -g)
+add_library(VG STATIC ${CMAKE_SOURCE_DIR}/src/BufferInsertVG.cpp)
+
