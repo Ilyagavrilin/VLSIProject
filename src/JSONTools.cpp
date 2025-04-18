@@ -57,29 +57,13 @@ bool parseTestFile(const std::string &filename, std::vector<VG::Edge> &edges,
     file >> testJson;
 
     std::map<int, std::string> nodeTypes;
+    int driverId = -1;
 
+    // First pass: identify the driver node (type "b")
     for (const auto &node : testJson["node"]) {
       int id = node["id"];
-      int x = node["x"];
-      int y = node["y"];
       std::string type = node["type"];
-
-      nodeCoords[id] = {x, y};
-      nodeTypes[id] = type;
-
-      // terminal node
-      if (type == "t") {
-        float capacitance = node["capacitance"];
-        float rat = node["rat"];
-
-        capsRATs.push_back({capacitance, rat});
-      }
-    }
-
-    // basic node, type "b"
-    // TODO(Ilyagavrilin): Maybe push node driverID first
-    int driverId = -1;
-    for (const auto &[id, type] : nodeTypes) {
+      
       if (type == "b") {
         driverId = id;
         break;
@@ -91,21 +75,56 @@ bool parseTestFile(const std::string &filename, std::vector<VG::Edge> &edges,
       return false;
     }
 
+    // Second pass: process all nodes, putting the driver-related data first
+    for (const auto &node : testJson["node"]) {
+      int id = node["id"];
+      int x = node["x"];
+      int y = node["y"];
+      std::string type = node["type"];
+
+      nodeCoords[id] = {x, y};
+      nodeTypes[id] = type;
+
+      // Only add terminal nodes to the capsRATs vector
+      if (type == "t") {
+        float capacitance = node["capacitance"];
+        float rat = node["rat"];
+
+        capsRATs.push_back({capacitance, rat});
+      }
+    }
+
+    // Process edges, ensuring any edge connected to the driver is processed first
+    std::vector<json> driverEdges;
+    std::vector<json> otherEdges;
+
     for (const auto &edge : testJson["edge"]) {
-      int startId = edge["vertices"][0];
-      int endId = edge["vertices"][1];
-
-      std::vector<std::pair<int, int>> points;
-      for (const auto &segment : edge["segments"]) {
-        points.push_back({segment[0], segment[1]});
+      if (static_cast<int>(edge["vertices"][0]) == driverId || 
+          static_cast<int>(edge["vertices"][1]) == driverId) {
+        driverEdges.push_back(edge);
+      } else {
+        otherEdges.push_back(edge);
       }
+    }
 
-      int totalLength = 0;
-      for (size_t i = 0; i < points.size() - 1; i++) {
-        totalLength += calculateDistance(points[i], points[i + 1]);
+    // Process driver edges first, then other edges
+    for (const auto &edgeGroups : {driverEdges, otherEdges}) {
+      for (const auto &edge : edgeGroups) {
+        int startId = edge["vertices"][0];
+        int endId = edge["vertices"][1];
+
+        std::vector<std::pair<int, int>> points;
+        for (const auto &segment : edge["segments"]) {
+          points.push_back({segment[0], segment[1]});
+        }
+
+        int totalLength = 0;
+        for (size_t i = 0; i < points.size() - 1; i++) {
+          totalLength += calculateDistance(points[i], points[i + 1]);
+        }
+
+        edges.push_back({startId, endId, totalLength});
       }
-
-      edges.push_back({startId, endId, totalLength});
     }
 
     return true;
@@ -149,6 +168,19 @@ bool generateOutputFile(const std::string &originalFilename,
     for (const auto &node : originalJson["node"]) {
       maxNodeId = std::max(maxNodeId, static_cast<int>(node["id"]));
     }
+    
+    if (!bufferPlaces.empty()) {
+      std::cerr << "Buffer placement locations (node IDs): ";
+      bool first = true;
+      for (const auto &place : bufferPlaces) {
+        if (!first) std::cerr << ", ";
+        std::cerr << place.ID;
+        first = false;
+      }
+      std::cerr << std::endl;
+    } else {
+      std::cerr << "No buffers were inserted." << std::endl;
+    }
 
     for (const auto &place : bufferPlaces) {
       json newBuffer = bufferTemplate;
@@ -171,7 +203,7 @@ bool generateOutputFile(const std::string &originalFilename,
     }
 
     outFile << std::setw(4) << originalJson << std::endl;
-    std::cout << "Output written to " << outputFilename << std::endl;
+    std::cout << "Output written to: " << outputFilename << std::endl;
     return true;
   } catch (const json::exception &e) {
     std::cerr << "JSON error: " << e.what() << std::endl;
