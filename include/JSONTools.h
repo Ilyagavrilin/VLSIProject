@@ -1,24 +1,45 @@
 #pragma once
 
-#include "BufferInsertVG.h"
-#include <cmath>
-#include <fstream>
-#include <map>
-#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+#include "BufferInsertVG.h"
+#include <nlohmann/json.hpp>
 
-using json = nlohmann::json;
+namespace JSONTools {
 
-namespace JSONHelper {
-bool parseTechFile(const std::string &filename, float &bufC, float &bufR,
-                   float &bufDel, float &unitR, float &unitC);
+struct InputNode {
+    int id;
+    int x;
+    int y;
+    std::string type;
+    std::string name;
+    float capacitance = 0.0f;
+    float rat = 0.0f;
+};
 
-bool parseTestFile(const std::string &filename, std::vector<VG::Edge> &edges,
-                   std::vector<VG::Params> &capsRATs,
-                   std::map<int, std::pair<int, int>> &nodeCoords);
+struct InputEdge {
+    int id;
+    std::vector<int> vertices;
+    std::vector<std::vector<int>> segments;
+};
 
-bool generateOutputFile(const std::string &originalFilename,
-                        const std::map<int, std::pair<int, int>> &nodeCoords,
-                        const VG::Trace &bufferPlaces);
-} // namespace JSONHelper
+struct InputData {
+    std::vector<InputNode> nodes;
+    std::vector<InputEdge> edges;
+};
+
+VG::TechParams parseTechFile(const std::string& filename);
+
+VG::TechParams parseBufferParams(const std::string& filename);
+
+InputData parseTestFile(const std::string& filename);
+
+void convertToVGStructures(const InputData& inputData, 
+                          std::vector<VG::Edge>& edges,
+                          std::vector<VG::Node>& nodes);
+
+void writeOutputFile(const std::string& originalFilename, 
+                    const InputData& originalData,
+                    const VG::Trace& trace);
+
+}  // namespace JSONTools
