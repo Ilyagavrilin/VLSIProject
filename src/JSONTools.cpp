@@ -1,4 +1,5 @@
 #include "JSONTools.h"
+#include "BufferInsertVG.h"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -138,10 +139,11 @@ void convertToVGStructures(const InputData &inputData,
     throw std::runtime_error(
         "No driver (buffer) node found in the input file!");
   }
-
+  int count = 0;
   for (const auto &inputNode : inputData.nodes) {
     if (inputNode.type == "t") {
       originalToNewId[inputNode.id] = newId++;
+      count++;
     }
   }
 
@@ -157,23 +159,20 @@ void convertToVGStructures(const InputData &inputData,
               << " -> New ID: " << mapping.second << std::endl;
   }
 
-  nodes.resize(newId);
-
   for (const auto &inputNode : inputData.nodes) {
     int newNodeId = originalToNewId[inputNode.id];
-
-    if (newNodeId >= 0 && newNodeId < newId) {
-      VG::Node &node = nodes[newNodeId];
-      node.ID = newNodeId;
-      node.Left = nullptr;
-      node.Right = nullptr;
-
-      if (inputNode.type == "t") {
-        VG::Params params;
-        params.C = inputNode.capacitance;
-        params.RAT = inputNode.rat;
-        node.CapsRATs = {params};
+    if (newNodeId >= 0 && newNodeId < newId && inputNode.type == "t") {
+      VG::Params params;
+      params.C = inputNode.capacitance;
+      params.RAT = inputNode.rat;
+      nodes.emplace_back(newNodeId, params);
+#ifdef DEBUG
+      std::cout << "Node: " << std::endl;
+      std::cout << newNodeId << " | " << inputNode.type << " | ";
+      for (const auto &parm: nodes.back().CapsRATs) {
+          std::cout << parm.C << " | " << parm.RAT << std::endl;
       }
+#endif
     }
   }
 
@@ -213,12 +212,13 @@ void convertToVGStructures(const InputData &inputData,
 
     edges.push_back(edge);
   }
-
+#ifdef DEBUG
   std::cout << "Edges (Start -> End, Length):" << std::endl;
   for (const auto &edge : edges) {
     std::cout << "  " << edge.Start << " -> " << edge.End
               << ", Length: " << edge.Len << std::endl;
   }
+#endif
 }
 
 void writeOutputFile(const std::string &originalFilename,
@@ -228,11 +228,12 @@ void writeOutputFile(const std::string &originalFilename,
       "_out.json";
 
   json outputJson;
-
+#ifdef DEBUG
   for (const auto &trace_elem : trace) {
     std::cout << "ID: " << trace_elem.ID << " Is buff: " << trace_elem.IsBuffer
               << std::endl;
   }
+#endif
   json nodeArray = json::array();
   for (const auto &node : originalData.nodes) {
     json nodeJson;
