@@ -1,6 +1,6 @@
 #include "JSONTools.h"
 #include "BufferInsertVG.h"
-#include <algorithm>
+#include <nlohmann/json.hpp>
 #include <cmath>
 #include <fstream>
 #include <iostream>

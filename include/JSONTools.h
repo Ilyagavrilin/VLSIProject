@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 #include "BufferInsertVG.h"
-#include <nlohmann/json.hpp>
 
 namespace JSONTools {
 
