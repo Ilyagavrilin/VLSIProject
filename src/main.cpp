@@ -20,19 +20,13 @@ int main(int argc, char* argv[]) {
         std::vector<VG::Edge> edges;
         std::vector<VG::Node> nodes;
         JSONTools::convertToVGStructures(inputData, edges, nodes);
-        // std::vector<VG::Edge> edges = {{3,1,16}, {3,2,0},{/*Start id*/ 0, /*End id*/ 3, /*Len*/ 49}};
-        // std::vector<VG::Params> CapsRATs = {{/*C*/ 1.5, /*RAT*/ 200}, {1.5, 800}};
-        // std::vector<VG::Node> nodes;
-        // auto SinkID = 1;
-        // for (const auto &Params : CapsRATs)
-        //   nodes.emplace_back(SinkID++, Params);
-
+#ifdef DEBUG
         for (const auto& elem: edges) 
             std::cout << elem.Start << " | " << elem.End << " | " << elem.Len << std::endl;
         std::cout << std::endl;
         for (const auto& elem: nodes) 
             std::cout << elem.ID << " | " << elem.CapsRATs.begin()->C << " | " << elem.CapsRATs.begin()->RAT << std::endl;
-
+#endif
         VG::BufferInsertVG bufferInserter(wireParams, bufferParams);
         bufferInserter.buildRoutingTree(edges, nodes);
         

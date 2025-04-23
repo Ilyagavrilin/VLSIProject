@@ -1,10 +1,10 @@
 #include "JSONTools.h"
 #include "BufferInsertVG.h"
-#include <nlohmann/json.hpp>
 #include <cmath>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
@@ -152,13 +152,13 @@ void convertToVGStructures(const InputData &inputData,
       originalToNewId[inputNode.id] = newId++;
     }
   }
-
+#ifdef DEBUG
   std::cout << "Node ID Mapping (Original -> New):" << std::endl;
   for (const auto &mapping : originalToNewId) {
     std::cout << "  Original ID: " << mapping.first
               << " -> New ID: " << mapping.second << std::endl;
   }
-
+#endif
   for (const auto &inputNode : inputData.nodes) {
     int newNodeId = originalToNewId[inputNode.id];
     if (newNodeId >= 0 && newNodeId < newId && inputNode.type == "t") {
@@ -169,8 +169,8 @@ void convertToVGStructures(const InputData &inputData,
 #ifdef DEBUG
       std::cout << "Node: " << std::endl;
       std::cout << newNodeId << " | " << inputNode.type << " | ";
-      for (const auto &parm: nodes.back().CapsRATs) {
-          std::cout << parm.C << " | " << parm.RAT << std::endl;
+      for (const auto &parm : nodes.back().CapsRATs) {
+        std::cout << parm.C << " | " << parm.RAT << std::endl;
       }
 #endif
     }
@@ -227,15 +227,84 @@ void writeOutputFile(const std::string &originalFilename,
       originalFilename.substr(0, originalFilename.find_last_of('.')) +
       "_out.json";
 
-  json outputJson;
 #ifdef DEBUG
   for (const auto &trace_elem : trace) {
     std::cout << "ID: " << trace_elem.ID << " Is buff: " << trace_elem.IsBuffer
               << std::endl;
   }
 #endif
-  json nodeArray = json::array();
+
+  std::vector<int> bufferLocations;
+  for (const auto &trace_elem : trace) {
+    if (trace_elem.IsBuffer) {
+      bufferLocations.push_back(trace_elem.ID);
+    }
+  }
+
+  InputNode bufferTemplate;
   for (const auto &node : originalData.nodes) {
+    if (node.type == "b") {
+      bufferTemplate = node;
+      break;
+    }
+  }
+
+  int maxNodeId = 0;
+  int maxEdgeId = 0;
+  for (const auto &node : originalData.nodes) {
+    maxNodeId = std::max(maxNodeId, node.id);
+  }
+  for (const auto &edge : originalData.edges) {
+    maxEdgeId = std::max(maxEdgeId, edge.id);
+  }
+
+  std::vector<InputNode> newNodes = originalData.nodes;
+  std::vector<InputEdge> newEdges = originalData.edges;
+
+  for (int bufferNodeId : bufferLocations) {
+    int x = 0, y = 0;
+    for (const auto &node : originalData.nodes) {
+      if (node.id == bufferNodeId) {
+        x = node.x;
+        y = node.y;
+        break;
+      }
+    }
+
+    int newBufferId = ++maxNodeId;
+    InputNode newBuffer = bufferTemplate;
+    newBuffer.id = newBufferId;
+    newBuffer.x = x;
+    newBuffer.y = y;
+    newNodes.push_back(newBuffer);
+
+    int newEdgeId = ++maxEdgeId;
+    InputEdge newEdge;
+    newEdge.id = newEdgeId;
+    newEdge.vertices = {newBufferId, bufferNodeId};
+    std::vector<int> point = {x, y};
+    newEdge.segments = {point, point};
+    newEdges.push_back(newEdge);
+
+
+    for (auto &edge : newEdges) {
+      if (edge.id == newEdgeId)
+        continue;
+
+      if (edge.vertices[0] == bufferNodeId) {
+        edge.vertices[0] = newBufferId;
+      } else if (edge.vertices[1] == bufferNodeId) {
+        edge.vertices[1] = newBufferId;
+      }
+    }
+  }
+
+
+  json outputJson;
+
+
+  json nodeArray = json::array();
+  for (const auto &node : newNodes) {
     json nodeJson;
     nodeJson["id"] = node.id;
     nodeJson["x"] = node.x;
@@ -252,12 +321,11 @@ void writeOutputFile(const std::string &originalFilename,
   }
 
   json edgeArray = json::array();
-  for (const auto &edge : originalData.edges) {
+  for (const auto &edge : newEdges) {
     json edgeJson;
     edgeJson["id"] = edge.id;
     edgeJson["vertices"] = edge.vertices;
     edgeJson["segments"] = edge.segments;
-
     edgeArray.push_back(edgeJson);
   }
 
