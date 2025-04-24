@@ -6,6 +6,7 @@
 #include <map>
 #include <nlohmann/json.hpp>
 
+// #define DEBUG
 using json = nlohmann::json;
 
 namespace JSONTools {
@@ -241,14 +242,6 @@ void writeOutputFile(const std::string &originalFilename,
     }
   }
 
-  InputNode bufferTemplate;
-  for (const auto &node : originalData.nodes) {
-    if (node.type == "b") {
-      bufferTemplate = node;
-      break;
-    }
-  }
-
   int maxNodeId = 0;
   int maxEdgeId = 0;
   for (const auto &node : originalData.nodes) {
@@ -272,7 +265,9 @@ void writeOutputFile(const std::string &originalFilename,
     }
 
     int newBufferId = ++maxNodeId;
-    InputNode newBuffer = bufferTemplate;
+    InputNode newBuffer;
+    newBuffer.name = "buf_inserted";
+    newBuffer.type = "b";
     newBuffer.id = newBufferId;
     newBuffer.x = x;
     newBuffer.y = y;

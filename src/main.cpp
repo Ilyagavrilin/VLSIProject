@@ -3,6 +3,8 @@
 #include "JSONTools.h"
 #include "BufferInsertVG.h"
 
+// #define DEBUG
+
 int main(int argc, char* argv[]) {
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <technology_file>.json <test_file>.json" << std::endl;
@@ -21,9 +23,10 @@ int main(int argc, char* argv[]) {
         std::vector<VG::Node> nodes;
         JSONTools::convertToVGStructures(inputData, edges, nodes);
 #ifdef DEBUG
+        std::cout << "Edges\n";
         for (const auto& elem: edges) 
             std::cout << elem.Start << " | " << elem.End << " | " << elem.Len << std::endl;
-        std::cout << std::endl;
+        std::cout << std::endl << "Sinks:\n";
         for (const auto& elem: nodes) 
             std::cout << elem.ID << " | " << elem.CapsRATs.begin()->C << " | " << elem.CapsRATs.begin()->RAT << std::endl;
 #endif

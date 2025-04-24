@@ -45,23 +45,14 @@ struct Edge {
 
 // Sink, steiner point or buffer
 struct Node {
-  Node *Left;
-  Node *Right;
   int ID;
-  int LenLeft;
-  int LenRight;
+  std::vector<Node *> Children;
+  std::vector<int> Lens;
   std::list<Params> CapsRATs;
   std::map<Params, Trace> SolutionsTrace;
 
-  Node() {
-    Left = nullptr;
-    Right = nullptr;
-  };
-  Node(int ID, const Params &CRAT) : ID(ID) {
-    CapsRATs = {CRAT};
-    Left = nullptr;
-    Right = nullptr;
-  }
+  Node() = default;
+  Node(int ID, const Params &CRAT) : ID(ID) { CapsRATs = {CRAT}; }
 };
 
 class BufferInsertVG {
@@ -75,16 +66,16 @@ class BufferInsertVG {
   std::list<Params> recursiveVanGin(Node *node);
   void addWire(std::list<Params> &List, Node *Parent, Node *Child, int Len);
   void insertBuffer(std::list<Params> &List, Node *Parent);
-  std::list<Params> mergeBranch(std::list<Params> &First,
-                                std::list<Params> &Second, Node *Parent);
+  std::list<Params> mergeBranch(const std::list<Params> &First,
+                                const std::list<Params> &Second, Node *Parent);
+  std::list<Params>
+  mergeBranches(const std::vector<std::list<Params>> &CldParams, Node *Parent);
   void pruneSolutions(std::list<Params> &Solutions);
 
 public:
   BufferInsertVG(const TechParams &UnitWire, const TechParams &Buffer) : UnitWire(UnitWire), Buffer(Buffer) {
     Root = new Node;
     Root->ID = 0;
-    Root->Left  = nullptr;
-    Root->Right = nullptr;
   };
 
   void buildRoutingTree(std::vector<Edge> &Edges, std::vector<Node> &Sinks);

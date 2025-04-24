@@ -2,16 +2,72 @@
 
 namespace VG {
 
+#ifdef DEBUG
+// Function to print the
+// N-ary tree graphically
+static void printNTree(Node *x, std::vector<bool> flag, int depth = 0,
+                       bool isLast = false) {
+  if (x == NULL)
+    return;
+  for (int i = 1; i < depth; ++i) {
+    if (flag[i] == true) {
+      std::cout << "| " << " " << " " << " ";
+    } else {
+      std::cout << " " << " " << " " << " ";
+    }
+  }
+  if (depth == 0)
+    std::cout << x->ID << '\n';
+  else if (isLast) {
+    std::cout << "+--- " << x->ID << '\n';
+    flag[depth] = false;
+  } else
+    std::cout << "+--- " << x->ID << '\n';
+  int it = 0;
+  for (auto i = x->Children.begin(); i != x->Children.end(); ++i, ++it)
+    printNTree(*i, flag, depth + 1, it == (x->Children.size()) - 1);
+  flag[depth] = true;
+}
+
+static void printNTree(Node *N, int nv) {
+  std::vector<bool> flag(nv, true);
+  printNTree(N, flag);
+}
+#endif
+
 void BufferInsertVG::buildRoutingTree(std::vector<Edge> &Edges,
                                    std::vector<Node> &Sinks) {
   CountSinks = Sinks.size();
   buildRecursive(Root, Edges, Sinks);
+
+#ifdef DEBUG
+  std::cout << "Result tree:\n";
+  int MaxNode = 0;
+  for (auto E : Edges) {
+    auto Max = std::max(E.Start, E.End);
+    MaxNode = std::max(MaxNode, Max);
+  }
+  printNTree(Root, MaxNode);
+#endif
 }
 
 Params BufferInsertVG::getOptimParams() {
   Root->CapsRATs = recursiveVanGin(Root);
   pruneSolutions(Root->CapsRATs);
+#ifdef DEBUG
+  std::cout << "ALL PARAMS:\n";
+  for (auto Node : Root->CapsRATs)
+    std::cout << "    C: " << Node.C << ", RAT: " << Node.RAT << "\n";
 
+  std::cout << "Optim C=" << Root->CapsRATs.back().C
+            << ", RAT: " << Root->CapsRATs.back().RAT << "\n";
+
+  const auto &Tr = Root->SolutionsTrace[Root->CapsRATs.back()];
+  std::cout << "Trace size: " << Tr.size() << "\n";
+  for (auto TrEl : Tr)
+    std::cout << "    Tr.ID= " << TrEl.ID << ", Tr.isbuf=" << TrEl.IsBuffer
+              << "\n";
+#endif
   return Root->CapsRATs.back();
 }
 
@@ -22,26 +78,21 @@ static bool isAllVisited(std::vector<Edge> &Edges) {
                      [](const auto Eg) { return Eg.IsVisited; });
 }
 
-void BufferInsertVG::buildRecursive(Node *node, std::vector<Edge> &Edges,
-                                 std::vector<Node> &Sinks) const {
-  if (node->ID > 0 && node->ID < CountSinks + 1) {
-    node->CapsRATs = Sinks[node->ID - 1].CapsRATs;
+void BufferInsertVG::buildRecursive(Node *N, std::vector<Edge> &Edges,
+                                    std::vector<Node> &Sinks) const {
+  if (N->ID > 0 && N->ID < CountSinks + 1) {
+    // sink
+    N->CapsRATs = Sinks[N->ID - 1].CapsRATs;
   }
   if (!isAllVisited(Edges)) {
     for (auto &Eg : Edges) {
-      if (node->ID == Eg.Start) {
+      if (N->ID == Eg.Start) {
         Eg.IsVisited = true;
-        if (node->Left && !node->Right) {
-          node->Right = new Node;
-          node->LenRight = Eg.Len;
-          node->Right->ID = Eg.End;
-          buildRecursive(node->Right, Edges, Sinks);
-        } else if (!node->Left) {
-          node->Left = new Node;
-          node->LenLeft = Eg.Len;
-          node->Left->ID = Eg.End;
-          buildRecursive(node->Left, Edges, Sinks);
-        }
+        Node *New = new Node;
+        New->ID = Eg.End;
+        N->Children.push_back(New);
+        N->Lens.push_back(Eg.Len);
+        buildRecursive(N->Children.back(), Edges, Sinks);
       }
     }
   }
@@ -106,9 +157,9 @@ void BufferInsertVG::pruneSolutions(std::list<Params> &Solutions) {
   }
 }
 
-std::list<Params> BufferInsertVG::mergeBranch(std::list<Params> &First,
-                                           std::list<Params> &Second,
-                                           Node *Parent) {
+std::list<Params> BufferInsertVG::mergeBranch(const std::list<Params> &First,
+                                              const std::list<Params> &Second,
+                                              Node *Parent) {
   std::list<Params> Result;
   auto FirstBr = First.begin();
   auto SecondBr = Second.begin();
@@ -131,41 +182,60 @@ std::list<Params> BufferInsertVG::mergeBranch(std::list<Params> &First,
   return Result;
 }
 
+std::list<Params>
+BufferInsertVG::mergeBranches(const std::vector<std::list<Params>> &CldParams,
+                              Node *Parent) {
+  for ([[maybe_unused]] auto &One : CldParams)
+    assert(!One.empty());
+
+  switch (CldParams.size()) {
+  case 1:
+    return CldParams.front();
+  case 2:
+    return mergeBranch(CldParams.front(), CldParams.back(), Parent);
+  }
+  std::list<Params> Result;
+  for (auto Cld = std::prev(CldParams.end()); Cld != CldParams.begin(); --Cld) {
+    std::list<Params> FirstResult = *Cld;
+
+    std::list<Params> SecondResult;
+    std::for_each(CldParams.begin(), Cld, [&SecondResult](const auto &Result) {
+      std::copy(Result.begin(), Result.end(), std::back_inserter(SecondResult));
+    });
+
+    auto Solution = mergeBranch(FirstResult, SecondResult, Parent);
+    std::move(Solution.begin(), Solution.end(), std::back_inserter(Result));
+  }
+  return Result;
+}
+
 // Recursive adding wires, buffers and prunning inferior solutions
-std::list<Params> BufferInsertVG::recursiveVanGin(Node *node) {
-  std::list<Params> Left, Right, Middle, Result;
-  if ((node->ID > 0) && (node->ID < CountSinks + 1)) {
-    Result = node->CapsRATs;
+std::list<Params> BufferInsertVG::recursiveVanGin(Node *N) {
+  std::list<Params> Result;
+  if ((N->ID > 0) && (N->ID < CountSinks + 1)) {
+    // sink - tree leaf
+    Result = N->CapsRATs;
     assert(Result.size() == 1);
-    assert((node->SolutionsTrace).empty());
-    node->SolutionsTrace[Result.front()] = {{node->ID, /* IsBuffer */ false}};
+    assert((N->SolutionsTrace).empty());
+    N->SolutionsTrace[Result.front()] = {{N->ID, /* IsBuffer */ false}};
     return Result;
   }
-  assert(node->SolutionsTrace.size() == 0);
+  assert(N->SolutionsTrace.size() == 0);
 
-  if (node->Left) {
-    Left = recursiveVanGin(node->Left);
-    addWire(Left, node, node->Left, node->LenLeft);
-    insertBuffer(Left, node);
-    pruneSolutions(Left);
-  }
-  if (node->Right) {
-    Right = recursiveVanGin(node->Right);
-    addWire(Right, node, node->Right, node->LenRight);
-    insertBuffer(Right, node);
-    pruneSolutions(Right);
-  }
-  if (node->Left && node->Right) {
-    Middle = mergeBranch(Left, Right, node);
-    pruneSolutions(Middle);
-    return Middle;
+  std::vector<std::list<Params>> ChildParams;
+  for (auto i = 0; i < int(N->Children.size()); ++i) {
+    Node *Cld = N->Children[i];
+    auto LenCld = N->Lens[i];
+    auto CldParams = recursiveVanGin(Cld);
+    addWire(CldParams, N, Cld, LenCld);
+    insertBuffer(CldParams, N);
+    pruneSolutions(CldParams);
+    ChildParams.push_back(CldParams);
   }
 
-  if (node->Left && !node->Right)
-    return Left;
-
-  assert(0 && "All nodes have't Children or have Left Child");
-  return Left;
+  auto Middle = mergeBranches(ChildParams, N);
+  pruneSolutions(Middle);
+  return Middle;
 }
 
 } // namespace VG

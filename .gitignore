@@ -31,3 +31,5 @@
 *.exe
 *.out
 *.app
+
+tests/data/*_out.json
