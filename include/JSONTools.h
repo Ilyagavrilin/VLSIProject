@@ -37,8 +37,8 @@ void convertToVGStructures(const InputData& inputData,
                           std::vector<VG::Edge>& edges,
                           std::vector<VG::Node>& nodes);
 
-void writeOutputFile(const std::string& originalFilename, 
-                    const InputData& originalData,
-                    const VG::Trace& trace);
+void writeOutputFile(const std::string &originalFilename,
+                     const InputData &originalData,
+                     const std::vector<VG::BufPlace> &bufferLocations);
 
 }  // namespace JSONTools

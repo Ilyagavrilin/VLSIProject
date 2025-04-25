@@ -1,13 +1,14 @@
 #ifndef REPEATER_INSERTION_H
 #define REPEATER_INSERTION_H
 
+#include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <list>
 #include <map>
 #include <vector>
-#include <algorithm>
-
 
 namespace VG {
 // Physical parameters of the elements. C-capacitance. R - resistance.
@@ -17,23 +18,30 @@ struct TechParams {
   float IntrinsicDel;
 };
 
+// For convenience in presenting the solution
+struct BufPlace {
+  int ParentID;
+  int ChildID;
+  int Len;
+};
+
 struct Params {
   float C;
   float RAT;
+  std::vector<BufPlace> Buffers;
 
   bool operator<(const Params &Rhs) const {
     if (C < Rhs.C)
       return true;
     return RAT < Rhs.RAT;
   }
-};
 
-// For convenience in presenting the solution
-struct TraceElem {
-  int ID;
-  bool IsBuffer;
+  bool operator==(const Params &Rhs) const {
+    if (std::fabs(C - Rhs.C) < std::numeric_limits<float>::epsilon())
+      return true;
+    return std::fabs(RAT - Rhs.RAT) < std::numeric_limits<float>::epsilon();
+  }
 };
-typedef std::list<TraceElem> Trace;
 
 // Representing a net routing tree as edges connecting syns, steiner points and buffer.
 struct Edge {
@@ -49,7 +57,6 @@ struct Node {
   std::vector<Node *> Children;
   std::vector<int> Lens;
   std::list<Params> CapsRATs;
-  std::map<Params, Trace> SolutionsTrace;
 
   Node() = default;
   Node(int ID, const Params &CRAT) : ID(ID) { CapsRATs = {CRAT}; }
@@ -65,11 +72,12 @@ class BufferInsertVG {
                       std::vector<Node> &Sinks) const;
   std::list<Params> recursiveVanGin(Node *node);
   void addWire(std::list<Params> &List, Node *Parent, Node *Child, int Len);
-  void insertBuffer(std::list<Params> &List, Node *Parent);
-  std::list<Params> mergeBranch(const std::list<Params> &First,
-                                const std::list<Params> &Second, Node *Parent);
-  std::list<Params>
-  mergeBranches(const std::vector<std::list<Params>> &CldParams, Node *Parent);
+  void insertBuffer(std::list<Params> &List, Node *Parent, Node *Child,
+                    int Len);
+  std::list<Params> mergeBranch(std::list<Params> &First,
+                                std::list<Params> &Second, Node *Parent);
+  std::list<Params> mergeBranches(std::vector<std::list<Params>> &CldParams,
+                                  Node *Parent);
   void pruneSolutions(std::list<Params> &Solutions);
 
 public:
@@ -80,7 +88,6 @@ public:
 
   void buildRoutingTree(std::vector<Edge> &Edges, std::vector<Node> &Sinks);
   Params getOptimParams();
-  Trace getTrace(const Params &P) const;
 };
 
 } //namespace VG

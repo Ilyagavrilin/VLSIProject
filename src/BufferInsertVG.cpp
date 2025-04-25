@@ -1,5 +1,7 @@
 #include "BufferInsertVG.h"
 
+// #define DEBUG
+
 namespace VG {
 
 #ifdef DEBUG
@@ -25,7 +27,7 @@ static void printNTree(Node *x, std::vector<bool> flag, int depth = 0,
     std::cout << "+--- " << x->ID << '\n';
   int it = 0;
   for (auto i = x->Children.begin(); i != x->Children.end(); ++i, ++it)
-    printNTree(*i, flag, depth + 1, it == (x->Children.size()) - 1);
+    printNTree(*i, flag, depth + 1, it == int(x->Children.size()) - 1);
   flag[depth] = true;
 }
 
@@ -55,23 +57,17 @@ Params BufferInsertVG::getOptimParams() {
   Root->CapsRATs = recursiveVanGin(Root);
   pruneSolutions(Root->CapsRATs);
 #ifdef DEBUG
-  std::cout << "ALL PARAMS:\n";
-  for (auto Node : Root->CapsRATs)
-    std::cout << "    C: " << Node.C << ", RAT: " << Node.RAT << "\n";
 
-  std::cout << "Optim C=" << Root->CapsRATs.back().C
-            << ", RAT: " << Root->CapsRATs.back().RAT << "\n";
+  std::cout << "Optim RAT: " << Root->CapsRATs.back().RAT
+            << ", Count buffers: " << Root->CapsRATs.back().Buffers.size()
+            << "\n";
+  for (auto B : Root->CapsRATs.back().Buffers)
+    std::cout << "    BUFFER Parent: " << B.ParentID
+              << ", Child : " << B.ChildID << ", Len: " << B.Len << "\n";
 
-  const auto &Tr = Root->SolutionsTrace[Root->CapsRATs.back()];
-  std::cout << "Trace size: " << Tr.size() << "\n";
-  for (auto TrEl : Tr)
-    std::cout << "    Tr.ID= " << TrEl.ID << ", Tr.isbuf=" << TrEl.IsBuffer
-              << "\n";
 #endif
   return Root->CapsRATs.back();
 }
-
-Trace BufferInsertVG::getTrace(const Params &P) const { return Root->SolutionsTrace[P]; }
 
 static bool isAllVisited(std::vector<Edge> &Edges) {
   return std::all_of(Edges.begin(), Edges.end(),
@@ -102,28 +98,27 @@ void BufferInsertVG::buildRecursive(Node *N, std::vector<Edge> &Edges,
 void BufferInsertVG::addWire(std::list<Params> &List, Node *Parent, Node *Child,
                           int Len) {
   assert(!List.empty());
-  for (auto &Point : List) {
-    auto &TraceBefore = Child->SolutionsTrace[Point];
-    TraceBefore.push_back({Parent->ID, /* IsBuffer */ false});
-    Point.RAT =
-        Point.RAT - Len * Len * UnitWire.R * UnitWire.C / 2 - Len * UnitWire.R * Point.C;
-    Point.C = Point.C + Len * UnitWire.C;
-    Parent->SolutionsTrace[Point] = TraceBefore;
+  constexpr auto UnitLen = 1;
+  std::list<Params> tmpList = List;
+  for (auto &Point : tmpList) {
+    List.remove(Point);
+    Point.RAT = Point.RAT - UnitLen * UnitLen * UnitWire.R * UnitWire.C / 2 -
+                UnitLen * UnitWire.R * Point.C;
+    Point.C = Point.C + UnitLen * UnitWire.C;
+    List.push_back(Point);
   }
   return;
 }
 
-void BufferInsertVG::insertBuffer(std::list<Params> &List, Node *Parent) {
-  if (!List.empty()) {
-    std::list<Params> tmpList = List;
-    for (auto &Point : tmpList) {
-      Trace addtmp = Parent->SolutionsTrace[Point];
-      addtmp.push_back({Parent->ID, /* IsBuffer */ true});
-      Point.RAT = Point.RAT - Buffer.R * Point.C - Buffer.IntrinsicDel;
-      Point.C = Buffer.C;
-      List.push_back(Point);
-      Parent->SolutionsTrace[Point] = addtmp;
-    }
+void BufferInsertVG::insertBuffer(std::list<Params> &List, Node *Parent,
+                                  Node *Child, int Len) {
+  assert(!List.empty());
+  std::list<Params> tmpList = List;
+  for (auto &Point : tmpList) {
+    Point.RAT = Point.RAT - Buffer.R * Point.C - Buffer.IntrinsicDel;
+    Point.C = Buffer.C;
+    Point.Buffers.push_back({Parent->ID, Child->ID, Len});
+    List.push_back(Point);
   }
   return;
 }
@@ -157,23 +152,22 @@ void BufferInsertVG::pruneSolutions(std::list<Params> &Solutions) {
   }
 }
 
-std::list<Params> BufferInsertVG::mergeBranch(const std::list<Params> &First,
-                                              const std::list<Params> &Second,
+std::list<Params> BufferInsertVG::mergeBranch(std::list<Params> &First,
+                                              std::list<Params> &Second,
                                               Node *Parent) {
   std::list<Params> Result;
   auto FirstBr = First.begin();
   auto SecondBr = Second.begin();
   while (FirstBr != First.end() && SecondBr != Second.end()) {
-    auto FirstTr = Parent->SolutionsTrace[*FirstBr];
-    auto SecondTr = Parent->SolutionsTrace[*SecondBr];
-
-    for (const auto Point : SecondTr)
-      FirstTr.push_back(Point);
     auto C = FirstBr->C + SecondBr->C;
     // It is works because both branches already sorted by caps
     auto MinRAT = std::min(FirstBr->RAT, SecondBr->RAT);
-    Result.push_back({C, MinRAT});
-    Parent->SolutionsTrace[{C, MinRAT}] = FirstTr;
+    FirstBr->Buffers.insert(FirstBr->Buffers.end(), SecondBr->Buffers.begin(),
+                            SecondBr->Buffers.end());
+
+    Params New(C, MinRAT, FirstBr->Buffers);
+    Result.push_back(New);
+
     if (FirstBr->RAT == MinRAT)
       ++FirstBr;
     else
@@ -183,7 +177,7 @@ std::list<Params> BufferInsertVG::mergeBranch(const std::list<Params> &First,
 }
 
 std::list<Params>
-BufferInsertVG::mergeBranches(const std::vector<std::list<Params>> &CldParams,
+BufferInsertVG::mergeBranches(std::vector<std::list<Params>> &CldParams,
                               Node *Parent) {
   for ([[maybe_unused]] auto &One : CldParams)
     assert(!One.empty());
@@ -211,25 +205,21 @@ BufferInsertVG::mergeBranches(const std::vector<std::list<Params>> &CldParams,
 
 // Recursive adding wires, buffers and prunning inferior solutions
 std::list<Params> BufferInsertVG::recursiveVanGin(Node *N) {
-  std::list<Params> Result;
   if ((N->ID > 0) && (N->ID < CountSinks + 1)) {
     // sink - tree leaf
-    Result = N->CapsRATs;
-    assert(Result.size() == 1);
-    assert((N->SolutionsTrace).empty());
-    N->SolutionsTrace[Result.front()] = {{N->ID, /* IsBuffer */ false}};
-    return Result;
+    return N->CapsRATs;
   }
-  assert(N->SolutionsTrace.size() == 0);
 
   std::vector<std::list<Params>> ChildParams;
   for (auto i = 0; i < int(N->Children.size()); ++i) {
     Node *Cld = N->Children[i];
     auto LenCld = N->Lens[i];
     auto CldParams = recursiveVanGin(Cld);
-    addWire(CldParams, N, Cld, LenCld);
-    insertBuffer(CldParams, N);
-    pruneSolutions(CldParams);
+    for ([[maybe_unused]] auto j = 1; j <= LenCld; ++j) {
+      addWire(CldParams, N, Cld, j);
+      insertBuffer(CldParams, N, Cld, j);
+      pruneSolutions(CldParams);
+    }
     ChildParams.push_back(CldParams);
   }
 

@@ -27,19 +27,21 @@ int main(int argc, char* argv[]) {
         for (const auto& elem: edges) 
             std::cout << elem.Start << " | " << elem.End << " | " << elem.Len << std::endl;
         std::cout << std::endl << "Sinks:\n";
-        for (const auto& elem: nodes) 
-            std::cout << elem.ID << " | " << elem.CapsRATs.begin()->C << " | " << elem.CapsRATs.begin()->RAT << std::endl;
+        for (const auto& elem: nodes)
+          std::cout << elem.ParentID << " | " << elem.CapsRATs.begin()->C
+                    << " | " << elem.CapsRATs.begin()->RAT << std::endl;
 #endif
         VG::BufferInsertVG bufferInserter(wireParams, bufferParams);
         bufferInserter.buildRoutingTree(edges, nodes);
-        
-        VG::Params optimalParams = bufferInserter.getOptimParams();
-        VG::Trace optimalTrace = bufferInserter.getTrace(optimalParams);
-        
-        JSONTools::writeOutputFile(testFilename, inputData, optimalTrace);
-        
-        std::cout << "Optimization complete. Optimal RAT: " << optimalParams.RAT << std::endl;
-        
+
+        const auto &optimalParams = bufferInserter.getOptimParams();
+        const auto &bufferLocations = optimalParams.Buffers;
+
+        JSONTools::writeOutputFile(testFilename, inputData, bufferLocations);
+
+        std::cout << "Optimization complete. Optimal RAT: "
+                  << std::round(optimalParams.RAT * 100) / 100 << std::endl;
+
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;

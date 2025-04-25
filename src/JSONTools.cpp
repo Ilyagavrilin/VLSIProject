@@ -223,24 +223,18 @@ void convertToVGStructures(const InputData &inputData,
 }
 
 void writeOutputFile(const std::string &originalFilename,
-                     const InputData &originalData, const VG::Trace &trace) {
+                     const InputData &originalData,
+                     const std::vector<VG::BufPlace> &bufferLocations) {
   std::string outputFilename =
       originalFilename.substr(0, originalFilename.find_last_of('.')) +
       "_out.json";
 
 #ifdef DEBUG
-  for (const auto &trace_elem : trace) {
-    std::cout << "ID: " << trace_elem.ID << " Is buff: " << trace_elem.IsBuffer
-              << std::endl;
+  for (const auto &buf : bufferLocations) {
+    std::cout << "ParentID: " << buf.ParentID << ", ChildID: " << buf.ChildID
+              << ", Len (from Child): " << buf.Len << "\n";
   }
 #endif
-
-  std::vector<int> bufferLocations;
-  for (const auto &trace_elem : trace) {
-    if (trace_elem.IsBuffer) {
-      bufferLocations.push_back(trace_elem.ID);
-    }
-  }
 
   int maxNodeId = 0;
   int maxEdgeId = 0;
@@ -254,46 +248,51 @@ void writeOutputFile(const std::string &originalFilename,
   std::vector<InputNode> newNodes = originalData.nodes;
   std::vector<InputEdge> newEdges = originalData.edges;
 
-  for (int bufferNodeId : bufferLocations) {
-    int x = 0, y = 0;
-    for (const auto &node : originalData.nodes) {
-      if (node.id == bufferNodeId) {
-        x = node.x;
-        y = node.y;
-        break;
-      }
-    }
+  // TODO: Write the coordinates of the buffers and the resulting segments (if
+  // the buffer is in the middle of an edge, it should be two instead of one
+  // edge) to the file according to the new representation of the buffer
+  // location:
+  // 1. ParentID, ChildID: ID of nodes between which the buffer is located
+  // 2. Len: Distance from CHILD
 
-    int newBufferId = ++maxNodeId;
-    InputNode newBuffer;
-    newBuffer.name = "buf_inserted";
-    newBuffer.type = "b";
-    newBuffer.id = newBufferId;
-    newBuffer.x = x;
-    newBuffer.y = y;
-    newNodes.push_back(newBuffer);
+  // for (int bufferNodeId : bufferLocations) {
+  //   int x = 0, y = 0;
+  //   for (const auto &node : originalData.nodes) {
+  //     if (node.id == bufferNodeId) {
+  //       x = node.x;
+  //       y = node.y;
+  //       break;
+  //     }
+  //   }
 
-    int newEdgeId = ++maxEdgeId;
-    InputEdge newEdge;
-    newEdge.id = newEdgeId;
-    newEdge.vertices = {newBufferId, bufferNodeId};
-    std::vector<int> point = {x, y};
-    newEdge.segments = {point, point};
-    newEdges.push_back(newEdge);
+  //   int newBufferId = ++maxNodeId;
+  //   InputNode newBuffer;
+  //   newBuffer.name = "buf_inserted";
+  //   newBuffer.type = "b";
+  //   newBuffer.id = newBufferId;
+  //   newBuffer.x = x;
+  //   newBuffer.y = y;
+  //   newNodes.push_back(newBuffer);
 
+  //   int newEdgeId = ++maxEdgeId;
+  //   InputEdge newEdge;
+  //   newEdge.id = newEdgeId;
+  //   newEdge.vertices = {newBufferId, bufferNodeId};
+  //   std::vector<int> point = {x, y};
+  //   newEdge.segments = {point, point};
+  //   newEdges.push_back(newEdge);
 
-    for (auto &edge : newEdges) {
-      if (edge.id == newEdgeId)
-        continue;
+  //   for (auto &edge : newEdges) {
+  //     if (edge.id == newEdgeId)
+  //       continue;
 
-      if (edge.vertices[0] == bufferNodeId) {
-        edge.vertices[0] = newBufferId;
-      } else if (edge.vertices[1] == bufferNodeId) {
-        edge.vertices[1] = newBufferId;
-      }
-    }
-  }
-
+  //     if (edge.vertices[0] == bufferNodeId) {
+  //       edge.vertices[0] = newBufferId;
+  //     } else if (edge.vertices[1] == bufferNodeId) {
+  //       edge.vertices[1] = newBufferId;
+  //     }
+  //   }
+  // }
 
   json outputJson;
 
