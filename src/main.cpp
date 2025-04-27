@@ -1,4 +1,5 @@
 #include <iostream>
+#include <map>
 #include <string>
 #include "JSONTools.h"
 #include "BufferInsertVG.h"
@@ -21,7 +22,8 @@ int main(int argc, char* argv[]) {
         
         std::vector<VG::Edge> edges;
         std::vector<VG::Node> nodes;
-        JSONTools::convertToVGStructures(inputData, edges, nodes);
+        std::map<int, int> originalToNewId, newToOriginalId;
+        JSONTools::convertToVGStructures(inputData, edges, nodes, originalToNewId, newToOriginalId);
 #ifdef DEBUG
         std::cout << "Edges\n";
         for (const auto& elem: edges) 
@@ -37,7 +39,7 @@ int main(int argc, char* argv[]) {
         const auto &optimalParams = bufferInserter.getOptimParams();
         const auto &bufferLocations = optimalParams.Buffers;
 
-        JSONTools::writeOutputFile(testFilename, inputData, bufferLocations);
+        JSONTools::writeOutputFile(testFilename, inputData, bufferLocations, newToOriginalId);
 
         std::cout << "Optimization complete. Optimal RAT: "
                   << std::round(optimalParams.RAT * 100) / 100 << std::endl;

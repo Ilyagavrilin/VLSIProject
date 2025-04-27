@@ -5,6 +5,8 @@
 #include <iostream>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <set>
+#include <filesystem>
 
 // #define DEBUG
 using json = nlohmann::json;
@@ -120,37 +122,45 @@ InputData parseTestFile(const std::string &filename) {
   return data;
 }
 
-void convertToVGStructures(const InputData &inputData,
-                           std::vector<VG::Edge> &edges,
-                           std::vector<VG::Node> &nodes) {
+void convertToVGStructures(InputData &inputData, std::vector<VG::Edge> &edges,
+                           std::vector<VG::Node> &nodes,
+                           std::map<int, int> &originalToNewId,
+                           std::map<int, int> &newToOriginalId) {
   edges.clear();
   nodes.clear();
-
-  std::map<int, int> originalToNewId;
+  originalToNewId.clear();
+  newToOriginalId.clear();
 
   int newId = 0;
-  for (const auto &inputNode : inputData.nodes) {
+  int driverId = -1;
+  for (auto &inputNode : inputData.nodes) {
     if (inputNode.type == "b") {
-      originalToNewId[inputNode.id] = newId++;
+      originalToNewId[inputNode.id] = newId;
+      newToOriginalId[newId] = inputNode.id;
+      driverId = inputNode.id;
+      newId++;
       break;
     }
   }
 
-  if (originalToNewId.empty()) {
+  if (driverId == -1) {
     throw std::runtime_error(
         "No driver (buffer) node found in the input file!");
   }
-  int count = 0;
+
   for (const auto &inputNode : inputData.nodes) {
     if (inputNode.type == "t") {
-      originalToNewId[inputNode.id] = newId++;
-      count++;
+      originalToNewId[inputNode.id] = newId;
+      newToOriginalId[newId] = inputNode.id;
+      newId++;
     }
   }
 
   for (const auto &inputNode : inputData.nodes) {
     if (inputNode.type == "s") {
-      originalToNewId[inputNode.id] = newId++;
+      originalToNewId[inputNode.id] = newId;
+      newToOriginalId[newId] = inputNode.id;
+      newId++;
     }
   }
 #ifdef DEBUG
@@ -161,8 +171,8 @@ void convertToVGStructures(const InputData &inputData,
   }
 #endif
   for (const auto &inputNode : inputData.nodes) {
-    int newNodeId = originalToNewId[inputNode.id];
-    if (newNodeId >= 0 && newNodeId < newId && inputNode.type == "t") {
+    if (inputNode.type == "t") {
+      int newNodeId = originalToNewId[inputNode.id];
       VG::Params params;
       params.C = inputNode.capacitance;
       params.RAT = inputNode.rat;
@@ -222,12 +232,42 @@ void convertToVGStructures(const InputData &inputData,
 #endif
 }
 
+// Helper function to find point coordinates at a specific distance from the
+// child
+std::vector<int>
+findPointAtDistance(const std::vector<std::vector<int>> &segments,
+                    int distanceFromChild) {
+  int remainingDistance = distanceFromChild;
+
+  for (int i = segments.size() - 2; i >= 0; --i) {
+    const auto &start = segments[i];
+    const auto &end = segments[i + 1];
+
+    int segmentLength = calculateManhattanDistance(start, end);
+
+    if (remainingDistance <= segmentLength) {
+      double ratio = static_cast<double>(remainingDistance) / segmentLength;
+      if (start[0] == end[0]) {
+        int y = end[1] + (start[1] - end[1]) * ratio;
+        return {start[0], y};
+      } else {
+        int x = end[0] + (start[0] - end[0]) * ratio;
+        return {x, end[1]};
+      }
+    }
+
+    remainingDistance -= segmentLength;
+  }
+
+  return segments[0];
+}
+
 void writeOutputFile(const std::string &originalFilename,
                      const InputData &originalData,
-                     const std::vector<VG::BufPlace> &bufferLocations) {
-  std::string outputFilename =
-      originalFilename.substr(0, originalFilename.find_last_of('.')) +
-      "_out.json";
+                     const std::vector<VG::BufPlace> &bufferLocations,
+                     const std::map<int, int> &newToOriginalId) {
+  std::filesystem::path inputPath(originalFilename);
+  std::string outputFilename = inputPath.stem().string() + "_out.json";
 
 #ifdef DEBUG
   for (const auto &buf : bufferLocations) {
@@ -248,54 +288,142 @@ void writeOutputFile(const std::string &originalFilename,
   std::vector<InputNode> newNodes = originalData.nodes;
   std::vector<InputEdge> newEdges = originalData.edges;
 
-  // TODO: Write the coordinates of the buffers and the resulting segments (if
-  // the buffer is in the middle of an edge, it should be two instead of one
-  // edge) to the file according to the new representation of the buffer
-  // location:
-  // 1. ParentID, ChildID: ID of nodes between which the buffer is located
-  // 2. Len: Distance from CHILD
+  InputNode bufferTemplate;
+  for (const auto &node : originalData.nodes) {
+    if (node.type == "b") {
+      bufferTemplate = node;
+      break;
+    }
+  }
 
-  // for (int bufferNodeId : bufferLocations) {
-  //   int x = 0, y = 0;
-  //   for (const auto &node : originalData.nodes) {
-  //     if (node.id == bufferNodeId) {
-  //       x = node.x;
-  //       y = node.y;
-  //       break;
-  //     }
-  //   }
+  std::set<int> edgesToRemove;
 
-  //   int newBufferId = ++maxNodeId;
-  //   InputNode newBuffer;
-  //   newBuffer.name = "buf_inserted";
-  //   newBuffer.type = "b";
-  //   newBuffer.id = newBufferId;
-  //   newBuffer.x = x;
-  //   newBuffer.y = y;
-  //   newNodes.push_back(newBuffer);
+  for (const auto &bufLoc : bufferLocations) {
+    int originalParentId = newToOriginalId.at(bufLoc.ParentID);
+    int originalChildId = newToOriginalId.at(bufLoc.ChildID);
 
-  //   int newEdgeId = ++maxEdgeId;
-  //   InputEdge newEdge;
-  //   newEdge.id = newEdgeId;
-  //   newEdge.vertices = {newBufferId, bufferNodeId};
-  //   std::vector<int> point = {x, y};
-  //   newEdge.segments = {point, point};
-  //   newEdges.push_back(newEdge);
+    InputEdge *targetEdge = nullptr;
+    for (auto &edge : newEdges) {
+      if ((edge.vertices[0] == originalParentId &&
+           edge.vertices[1] == originalChildId) ||
+          (edge.vertices[0] == originalChildId &&
+           edge.vertices[1] == originalParentId)) {
+        targetEdge = &edge;
+        break;
+      }
+    }
 
-  //   for (auto &edge : newEdges) {
-  //     if (edge.id == newEdgeId)
-  //       continue;
+    if (!targetEdge) {
+      std::cerr << "Warning: Could not find edge between nodes "
+                << originalParentId << " and " << originalChildId << std::endl;
+      continue;
+    }
 
-  //     if (edge.vertices[0] == bufferNodeId) {
-  //       edge.vertices[0] = newBufferId;
-  //     } else if (edge.vertices[1] == bufferNodeId) {
-  //       edge.vertices[1] = newBufferId;
-  //     }
-  //   }
-  // }
+    edgesToRemove.insert(targetEdge->id);
+
+    std::vector<int> bufferPosition;
+
+    if (bufLoc.Len == 0) {
+      for (const auto &node : originalData.nodes) {
+        if (node.id == originalChildId) {
+          bufferPosition = {node.x, node.y};
+          break;
+        }
+      }
+    } else {
+      std::vector<std::vector<int>> segments = targetEdge->segments;
+
+      if (targetEdge->vertices[0] == originalChildId &&
+          targetEdge->vertices[1] == originalParentId) {
+        std::reverse(segments.begin(), segments.end());
+      }
+
+      bufferPosition = findPointAtDistance(segments, bufLoc.Len);
+    }
+
+    int newBufferId = ++maxNodeId;
+    InputNode newBuffer = bufferTemplate;
+    newBuffer.id = newBufferId;
+    newBuffer.x = bufferPosition[0];
+    newBuffer.y = bufferPosition[1];
+    newNodes.push_back(newBuffer);
+
+    InputEdge edge1;
+    edge1.id = ++maxEdgeId;
+    edge1.vertices = {originalParentId, newBufferId};
+
+    InputEdge edge2;
+    edge2.id = ++maxEdgeId;
+    edge2.vertices = {newBufferId, originalChildId};
+
+    if (bufLoc.Len == 0) {
+      edge1.segments = targetEdge->segments;
+      edge2.segments = {bufferPosition, bufferPosition};
+    } else {
+      std::vector<std::vector<int>> segments = targetEdge->segments;
+      bool flipSegments = false;
+
+      if (targetEdge->vertices[0] == originalChildId &&
+          targetEdge->vertices[1] == originalParentId) {
+        std::reverse(segments.begin(), segments.end());
+        flipSegments = true;
+      }
+
+      std::vector<std::vector<int>> firstPart;
+      std::vector<std::vector<int>> secondPart;
+      bool foundSplit = false;
+      int remainingDistance = bufLoc.Len;
+
+      for (int i = segments.size() - 2; i >= 0; --i) {
+        const auto &start = segments[i];
+        const auto &end = segments[i + 1];
+
+        int segmentLength = calculateManhattanDistance(start, end);
+
+        if (!foundSplit && remainingDistance <= segmentLength) {
+          foundSplit = true;
+
+          secondPart.insert(secondPart.begin(), bufferPosition);
+          firstPart.push_back(bufferPosition);
+
+          for (int j = 0; j <= i; ++j) {
+            firstPart.insert(firstPart.begin(), segments[j]);
+          }
+          for (size_t j = i + 1; j < segments.size(); ++j) {
+            secondPart.push_back(segments[j]);
+          }
+          break;
+        }
+
+        remainingDistance -= segmentLength;
+      }
+
+      if (!foundSplit) {
+        firstPart = {segments.front(), bufferPosition};
+        secondPart = {bufferPosition, segments.back()};
+      }
+
+      if (flipSegments) {
+        std::reverse(firstPart.begin(), firstPart.end());
+        std::reverse(secondPart.begin(), secondPart.end());
+      }
+
+      edge1.segments = firstPart;
+      edge2.segments = secondPart;
+    }
+
+    newEdges.push_back(edge1);
+    newEdges.push_back(edge2);
+  }
+
+  auto it = std::remove_if(newEdges.begin(), newEdges.end(),
+                           [&edgesToRemove](const InputEdge &edge) {
+                             return edgesToRemove.find(edge.id) !=
+                                    edgesToRemove.end();
+                           });
+  newEdges.erase(it, newEdges.end());
 
   json outputJson;
-
 
   json nodeArray = json::array();
   for (const auto &node : newNodes) {
