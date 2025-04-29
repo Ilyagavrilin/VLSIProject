@@ -1,17 +1,20 @@
+#include "BufferInsertVG.h"
+#include "JSONTools.h"
+#include <chrono>
 #include <iostream>
 #include <map>
 #include <string>
-#include "JSONTools.h"
-#include "BufferInsertVG.h"
 
 // #define DEBUG
 
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <technology_file>.json <test_file>.json" << std::endl;
-        return 1;
-    }
-    
+  using namespace std::chrono;
+  if (argc < 3) {
+    std::cerr << "Usage: " << argv[0]
+              << " <technology_file>.json <test_file>.json" << std::endl;
+    return 1;
+  }
+
     std::string techFilename = argv[1];
     std::string testFilename = argv[2];
     
@@ -36,13 +39,21 @@ int main(int argc, char* argv[]) {
         VG::BufferInsertVG bufferInserter(wireParams, bufferParams);
         bufferInserter.buildRoutingTree(edges, nodes);
 
+        auto Start = high_resolution_clock::now();
         const auto &optimalParams = bufferInserter.getOptimParams();
+        auto End = high_resolution_clock::now();
+
         const auto &bufferLocations = optimalParams.Buffers;
 
         JSONTools::writeOutputFile(testFilename, inputData, bufferLocations, newToOriginalId);
 
         std::cout << "Optimization complete. Optimal RAT: "
                   << std::round(optimalParams.RAT * 100) / 100 << std::endl;
+#ifdef DEBUG
+        std::cout << "Time: "
+                  << duration_cast<milliseconds>(End - Start).count()
+                  << std::endl;
+#endif
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

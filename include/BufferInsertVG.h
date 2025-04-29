@@ -23,6 +23,11 @@ struct BufPlace {
   int ParentID;
   int ChildID;
   int Len;
+
+  bool operator!=(const BufPlace &Rhs) const {
+    return ParentID != Rhs.ParentID || ChildID != Rhs.ChildID || Len != Rhs.Len;
+  };
+  bool operator==(const BufPlace &Rhs) const { return !(*this != Rhs); }
 };
 
 struct Params {
@@ -37,9 +42,8 @@ struct Params {
   }
 
   bool operator==(const Params &Rhs) const {
-    if (std::fabs(C - Rhs.C) < std::numeric_limits<float>::epsilon())
-      return true;
-    return std::fabs(RAT - Rhs.RAT) < std::numeric_limits<float>::epsilon();
+    return (std::fabs(C - Rhs.C) < std::numeric_limits<float>::epsilon()) &&
+           (std::fabs(RAT - Rhs.RAT) < std::numeric_limits<float>::epsilon());
   }
 };
 

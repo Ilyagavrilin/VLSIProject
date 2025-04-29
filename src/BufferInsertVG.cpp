@@ -55,6 +55,13 @@ void BufferInsertVG::buildRoutingTree(std::vector<Edge> &Edges,
 
 Params BufferInsertVG::getOptimParams() {
   Root->CapsRATs = recursiveVanGin(Root);
+  insertBuffer(Root->CapsRATs, Root, Root, 0);
+  auto NoContainMainBuf = [](const auto &CR) {
+    if (CR.Buffers.empty())
+      return true;
+    return CR.Buffers.back() != BufPlace{0, 0, 0};
+  };
+  Root->CapsRATs.remove_if(NoContainMainBuf);
   pruneSolutions(Root->CapsRATs);
 #ifdef DEBUG
 
@@ -66,6 +73,7 @@ Params BufferInsertVG::getOptimParams() {
               << ", Child : " << B.ChildID << ", Len: " << B.Len << "\n";
 
 #endif
+  assert(Root->CapsRATs.size() == 1);
   return Root->CapsRATs.back();
 }
 
@@ -164,7 +172,6 @@ std::list<Params> BufferInsertVG::mergeBranch(std::list<Params> &First,
     auto MinRAT = std::min(FirstBr->RAT, SecondBr->RAT);
     FirstBr->Buffers.insert(FirstBr->Buffers.end(), SecondBr->Buffers.begin(),
                             SecondBr->Buffers.end());
-
     Params New(C, MinRAT, FirstBr->Buffers);
     Result.push_back(New);
 
@@ -179,28 +186,16 @@ std::list<Params> BufferInsertVG::mergeBranch(std::list<Params> &First,
 std::list<Params>
 BufferInsertVG::mergeBranches(std::vector<std::list<Params>> &CldParams,
                               Node *Parent) {
-  for ([[maybe_unused]] auto &One : CldParams)
-    assert(!One.empty());
+  if (CldParams.size() == 1)
+    return CldParams.back();
 
-  switch (CldParams.size()) {
-  case 1:
-    return CldParams.front();
-  case 2:
-    return mergeBranch(CldParams.front(), CldParams.back(), Parent);
+  std::list<Params> FirstBr = *CldParams.begin();
+  for (auto SecondBr = std::next(CldParams.begin());
+       SecondBr != CldParams.end(); ++SecondBr) {
+    FirstBr = mergeBranch(FirstBr, *SecondBr, Parent);
+    pruneSolutions(FirstBr);
   }
-  std::list<Params> Result;
-  for (auto Cld = std::prev(CldParams.end()); Cld != CldParams.begin(); --Cld) {
-    std::list<Params> FirstResult = *Cld;
-
-    std::list<Params> SecondResult;
-    std::for_each(CldParams.begin(), Cld, [&SecondResult](const auto &Result) {
-      std::copy(Result.begin(), Result.end(), std::back_inserter(SecondResult));
-    });
-
-    auto Solution = mergeBranch(FirstResult, SecondResult, Parent);
-    std::move(Solution.begin(), Solution.end(), std::back_inserter(Result));
-  }
-  return Result;
+  return FirstBr;
 }
 
 // Recursive adding wires, buffers and prunning inferior solutions

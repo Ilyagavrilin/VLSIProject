@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
+set(CMAKE_CXX_STANDARD 20)
 include(FetchContent)
 
 message("Looking for compiler caching tool")
@@ -40,7 +41,7 @@ endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 add_executable(${PROJECT_NAME} src/main.cpp)
-add_compile_options(-Wall -std=c++2a -g)
+add_compile_options(-Wall -g)
 add_library(VG STATIC ${CMAKE_SOURCE_DIR}/src/BufferInsertVG.cpp)
 add_library(JSON STATIC ${CMAKE_SOURCE_DIR}/src/JSONTools.cpp)
 target_link_libraries(JSON PRIVATE nlohmann_json::nlohmann_json)

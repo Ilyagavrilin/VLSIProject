@@ -189,8 +189,10 @@ void convertToVGStructures(InputData &inputData, std::vector<VG::Edge> &edges,
 
   for (const auto &inputEdge : inputData.edges) {
     if (inputEdge.vertices.size() < 2) {
+#ifdef DEBUG
       std::cerr << "Warning: Edge " << inputEdge.id
                 << " has fewer than 2 vertices, skipping." << std::endl;
+#endif
       continue;
     }
 
@@ -201,8 +203,10 @@ void convertToVGStructures(InputData &inputData, std::vector<VG::Edge> &edges,
 
     if (originalToNewId.find(originalStart) == originalToNewId.end() ||
         originalToNewId.find(originalEnd) == originalToNewId.end()) {
+#ifdef DEBUG
       std::cerr << "Warning: Edge " << inputEdge.id
                 << " references unknown node IDs, skipping." << std::endl;
+#endif
       continue;
     }
 
@@ -314,8 +318,10 @@ void writeOutputFile(const std::string &originalFilename,
     }
 
     if (!targetEdge) {
+#ifdef DEBUG
       std::cerr << "Warning: Could not find edge between nodes "
                 << originalParentId << " and " << originalChildId << std::endl;
+#endif
       continue;
     }
 
