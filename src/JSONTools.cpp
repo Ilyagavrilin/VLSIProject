@@ -420,6 +420,10 @@ void writeOutputFile(const std::string &originalFilename,
       newBuffer.x = info.position[0];
       newBuffer.y = info.position[1];
       newNodes.push_back(newBuffer);
+      // #ifdef DEBUG
+      std::cout << " BUFFER " << "(" << newBuffer.x << ", " << newBuffer.y
+                << ")\n";
+      // #endif
 
       bufferInfos.push_back(info);
     }

@@ -210,11 +210,23 @@ std::list<Params> BufferInsertVG::recursiveVanGin(Node *N) {
     Node *Cld = N->Children[i];
     auto LenCld = N->Lens[i];
     auto CldParams = recursiveVanGin(Cld);
-    for ([[maybe_unused]] auto j = 1; j <= LenCld; ++j) {
-      addWire(CldParams, N, Cld, j);
-      insertBuffer(CldParams, N, Cld, j);
+    if (LenCld == 0) {
+      insertBuffer(CldParams, N, Cld, 0);
       pruneSolutions(CldParams);
+    } else if (Cld->ID < CountSinks + 1) {
+      for (auto j = 1; j <= LenCld; ++j) {
+        addWire(CldParams, N, Cld, 1);
+        insertBuffer(CldParams, N, Cld, j);
+        pruneSolutions(CldParams);
+      }
+    } else {
+      for (auto j = 0; j < LenCld; ++j) {
+        addWire(CldParams, N, Cld, 1);
+        insertBuffer(CldParams, N, Cld, j);
+        pruneSolutions(CldParams);
+      }
     }
+
     ChildParams.push_back(CldParams);
   }
 
