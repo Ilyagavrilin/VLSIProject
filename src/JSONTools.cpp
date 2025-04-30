@@ -1,12 +1,12 @@
 #include "JSONTools.h"
 #include "BufferInsertVG.h"
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <set>
-#include <filesystem>
 
 // #define DEBUG
 using json = nlohmann::json;
@@ -290,144 +290,194 @@ void writeOutputFile(const std::string &originalFilename,
   }
 
   std::vector<InputNode> newNodes = originalData.nodes;
-  std::vector<InputEdge> newEdges = originalData.edges;
 
   InputNode bufferTemplate;
+  bool foundTemplate = false;
   for (const auto &node : originalData.nodes) {
     if (node.type == "b") {
       bufferTemplate = node;
+      foundTemplate = true;
       break;
     }
   }
+  // Add more checks
+  if (!foundTemplate) {
+    throw std::runtime_error(
+        "Could not find buffer template in original nodes!");
+  }
 
-  std::set<int> edgesToRemove;
-
+  std::map<std::pair<int, int>, std::vector<VG::BufPlace>> bufferGroups;
   for (const auto &bufLoc : bufferLocations) {
     int originalParentId = newToOriginalId.at(bufLoc.ParentID);
     int originalChildId = newToOriginalId.at(bufLoc.ChildID);
+    bufferGroups[{originalParentId, originalChildId}].push_back(bufLoc);
+  }
+
+  std::vector<InputEdge> newEdges;
+  std::set<int> edgesToKeep;
+
+  for (const auto &edge : originalData.edges) {
+    edgesToKeep.insert(edge.id);
+  }
+
+  for (auto &[edgePair, buffers] : bufferGroups) {
+    auto [originalParentId, originalChildId] = edgePair;
+
+    // Corner case: buffer on node (self-loop)
+    if (originalParentId == originalChildId) {
+      for (const auto &bufLoc : buffers) {
+        if (bufLoc.Len != 0) {
+          std::cerr << "Warning: Non-zero length buffer on self-loop, skipping."
+                    << std::endl;
+          continue;
+        }
+
+        std::vector<int> nodePosition;
+        for (const auto &node : originalData.nodes) {
+          if (node.id == originalParentId) {
+            nodePosition = {node.x, node.y};
+            break;
+          }
+        }
+
+        int newBufferId = ++maxNodeId;
+        InputNode newBuffer = bufferTemplate;
+        newBuffer.id = newBufferId;
+        newBuffer.x = nodePosition[0];
+        newBuffer.y = nodePosition[1];
+        newNodes.push_back(newBuffer);
+
+        InputEdge loopEdge;
+        loopEdge.id = ++maxEdgeId;
+        loopEdge.vertices = {newBufferId, newBufferId};
+        loopEdge.segments = {nodePosition, nodePosition};
+        newEdges.push_back(loopEdge);
+      }
+      continue;
+    }
 
     InputEdge *targetEdge = nullptr;
-    for (auto &edge : newEdges) {
+    for (auto &edge : originalData.edges) {
       if ((edge.vertices[0] == originalParentId &&
            edge.vertices[1] == originalChildId) ||
           (edge.vertices[0] == originalChildId &&
            edge.vertices[1] == originalParentId)) {
-        targetEdge = &edge;
+        targetEdge = const_cast<InputEdge *>(&edge);
+        edgesToKeep.erase(edge.id);
         break;
       }
     }
 
     if (!targetEdge) {
-#ifdef DEBUG
       std::cerr << "Warning: Could not find edge between nodes "
                 << originalParentId << " and " << originalChildId << std::endl;
-#endif
       continue;
     }
 
-    edgesToRemove.insert(targetEdge->id);
-
-    std::vector<int> bufferPosition;
-
-    if (bufLoc.Len == 0) {
-      for (const auto &node : originalData.nodes) {
-        if (node.id == originalChildId) {
-          bufferPosition = {node.x, node.y};
-          break;
-        }
-      }
-    } else {
-      std::vector<std::vector<int>> segments = targetEdge->segments;
-
-      if (targetEdge->vertices[0] == originalChildId &&
-          targetEdge->vertices[1] == originalParentId) {
-        std::reverse(segments.begin(), segments.end());
-      }
-
-      bufferPosition = findPointAtDistance(segments, bufLoc.Len);
+    std::vector<std::vector<int>> segments = targetEdge->segments;
+    if (targetEdge->vertices[0] == originalChildId &&
+        targetEdge->vertices[1] == originalParentId) {
+      std::reverse(segments.begin(), segments.end());
     }
 
-    int newBufferId = ++maxNodeId;
-    InputNode newBuffer = bufferTemplate;
-    newBuffer.id = newBufferId;
-    newBuffer.x = bufferPosition[0];
-    newBuffer.y = bufferPosition[1];
-    newNodes.push_back(newBuffer);
+    int totalLength = calculateSegmentLength(segments);
 
-    InputEdge edge1;
-    edge1.id = ++maxEdgeId;
-    edge1.vertices = {originalParentId, newBufferId};
+    std::sort(buffers.begin(), buffers.end(),
+              [](const VG::BufPlace &a, const VG::BufPlace &b) {
+                return a.Len < b.Len;
+              });
 
-    InputEdge edge2;
-    edge2.id = ++maxEdgeId;
-    edge2.vertices = {newBufferId, originalChildId};
-
-    if (bufLoc.Len == 0) {
-      edge1.segments = targetEdge->segments;
-      edge2.segments = {bufferPosition, bufferPosition};
-    } else {
-      std::vector<std::vector<int>> segments = targetEdge->segments;
-      bool flipSegments = false;
-
-      if (targetEdge->vertices[0] == originalChildId &&
-          targetEdge->vertices[1] == originalParentId) {
-        std::reverse(segments.begin(), segments.end());
-        flipSegments = true;
+    std::vector<int> childPosition;
+    for (const auto &node : originalData.nodes) {
+      if (node.id == originalChildId) {
+        childPosition = {node.x, node.y};
+        break;
       }
-
-      std::vector<std::vector<int>> firstPart;
-      std::vector<std::vector<int>> secondPart;
-      bool foundSplit = false;
-      int remainingDistance = bufLoc.Len;
-
-      for (int i = segments.size() - 2; i >= 0; --i) {
-        const auto &start = segments[i];
-        const auto &end = segments[i + 1];
-
-        int segmentLength = calculateManhattanDistance(start, end);
-
-        if (!foundSplit && remainingDistance <= segmentLength) {
-          foundSplit = true;
-
-          secondPart.insert(secondPart.begin(), bufferPosition);
-          firstPart.push_back(bufferPosition);
-
-          for (int j = 0; j <= i; ++j) {
-            firstPart.insert(firstPart.begin(), segments[j]);
-          }
-          for (size_t j = i + 1; j < segments.size(); ++j) {
-            secondPart.push_back(segments[j]);
-          }
-          break;
-        }
-
-        remainingDistance -= segmentLength;
-      }
-
-      if (!foundSplit) {
-        firstPart = {segments.front(), bufferPosition};
-        secondPart = {bufferPosition, segments.back()};
-      }
-
-      if (flipSegments) {
-        std::reverse(firstPart.begin(), firstPart.end());
-        std::reverse(secondPart.begin(), secondPart.end());
-      }
-
-      edge1.segments = firstPart;
-      edge2.segments = secondPart;
     }
 
-    newEdges.push_back(edge1);
-    newEdges.push_back(edge2);
+    struct BufferInfo {
+      int id;
+      std::vector<int> position;
+      int distanceFromChild;
+    };
+
+    std::vector<BufferInfo> bufferInfos;
+
+    for (const auto &bufLoc : buffers) {
+      BufferInfo info;
+      info.id = ++maxNodeId;
+      info.distanceFromChild = bufLoc.Len;
+
+      if (bufLoc.Len == 0) {
+        info.position = childPosition;
+      } else {
+        info.position = findPointAtDistance(segments, bufLoc.Len);
+      }
+
+      InputNode newBuffer = bufferTemplate;
+      newBuffer.id = info.id;
+      newBuffer.x = info.position[0];
+      newBuffer.y = info.position[1];
+      newNodes.push_back(newBuffer);
+
+      bufferInfos.push_back(info);
+    }
+
+    if (bufferInfos.empty()) {
+      continue;
+    }
+
+    BufferInfo parentInfo;
+    parentInfo.id = originalParentId;
+    parentInfo.position = segments.front();
+    parentInfo.distanceFromChild = totalLength;
+
+    BufferInfo childInfo;
+    childInfo.id = originalChildId;
+    childInfo.position = segments.back();
+    childInfo.distanceFromChild = 0;
+
+    std::vector<BufferInfo> allPoints;
+    allPoints.push_back(parentInfo);
+    allPoints.insert(allPoints.end(), bufferInfos.begin(), bufferInfos.end());
+    allPoints.push_back(childInfo);
+
+    std::sort(allPoints.begin(), allPoints.end(),
+              [](const BufferInfo &a, const BufferInfo &b) {
+                return a.distanceFromChild > b.distanceFromChild;
+              });
+
+    for (size_t i = 0; i < allPoints.size() - 1; ++i) {
+      const auto &startInfo = allPoints[i];
+      const auto &endInfo = allPoints[i + 1];
+
+      InputEdge newEdge;
+      newEdge.id = ++maxEdgeId;
+      newEdge.vertices = {startInfo.id, endInfo.id};
+
+      if (startInfo.distanceFromChild == endInfo.distanceFromChild) {
+        newEdge.segments = {startInfo.position, endInfo.position};
+      } else {
+        newEdge.segments = extractSegmentsBetween(
+            segments, startInfo.distanceFromChild, endInfo.distanceFromChild);
+
+        if (!newEdge.segments.empty()) {
+          newEdge.segments.front() = startInfo.position;
+          newEdge.segments.back() = endInfo.position;
+        } else {
+          newEdge.segments = {startInfo.position, endInfo.position};
+        }
+      }
+
+      newEdges.push_back(newEdge);
+    }
   }
 
-  auto it = std::remove_if(newEdges.begin(), newEdges.end(),
-                           [&edgesToRemove](const InputEdge &edge) {
-                             return edgesToRemove.find(edge.id) !=
-                                    edgesToRemove.end();
-                           });
-  newEdges.erase(it, newEdges.end());
+  for (const auto &edge : originalData.edges) {
+    if (edgesToKeep.find(edge.id) != edgesToKeep.end()) {
+      newEdges.push_back(edge);
+    }
+  }
 
   json outputJson;
 
@@ -467,6 +517,96 @@ void writeOutputFile(const std::string &originalFilename,
 
   outFile << outputJson.dump(4); // Pretty print with 4-space indent
   std::cout << "Output written to " << outputFilename << std::endl;
+}
+
+std::vector<std::vector<int>>
+extractSegmentsBetween(const std::vector<std::vector<int>> &segments,
+                       int startDistanceFromChild, int endDistanceFromChild) {
+
+  if (segments.size() < 2) {
+    return {};
+  }
+
+  std::vector<std::vector<int>> result;
+
+  std::vector<int> segmentLengths;
+  for (size_t i = 0; i < segments.size() - 1; ++i) {
+    int length = calculateManhattanDistance(segments[i + 1], segments[i]);
+    segmentLengths.push_back(length);
+  }
+
+  std::vector<int> distancesFromChild;
+  int cumulativeDistance = 0;
+  distancesFromChild.push_back(cumulativeDistance);
+  for (int i = segmentLengths.size() - 1; i >= 0; --i) {
+    cumulativeDistance += segmentLengths[i];
+    distancesFromChild.insert(distancesFromChild.begin(), cumulativeDistance);
+  }
+
+  int startSegmentIdx = -1;
+  int endSegmentIdx = -1;
+  std::vector<int> startPoint, endPoint;
+
+  for (size_t i = 0; i < distancesFromChild.size() - 1; ++i) {
+    if (startSegmentIdx == -1 &&
+        distancesFromChild[i] >= startDistanceFromChild &&
+        distancesFromChild[i + 1] <= startDistanceFromChild) {
+      startSegmentIdx = i;
+
+      double ratio =
+          (double)(startDistanceFromChild - distancesFromChild[i + 1]) /
+          (distancesFromChild[i] - distancesFromChild[i + 1]);
+
+      if (segments[i][0] == segments[i + 1][0]) {
+        int y =
+            segments[i + 1][1] + ratio * (segments[i][1] - segments[i + 1][1]);
+        startPoint = {segments[i][0], y};
+      } else {
+        int x =
+            segments[i + 1][0] + ratio * (segments[i][0] - segments[i + 1][0]);
+        startPoint = {x, segments[i][1]};
+      }
+    }
+
+    if (endSegmentIdx == -1 && distancesFromChild[i] >= endDistanceFromChild &&
+        distancesFromChild[i + 1] <= endDistanceFromChild) {
+      endSegmentIdx = i;
+
+      double ratio =
+          (double)(endDistanceFromChild - distancesFromChild[i + 1]) /
+          (distancesFromChild[i] - distancesFromChild[i + 1]);
+
+      if (segments[i][0] == segments[i + 1][0]) {
+        int y =
+            segments[i + 1][1] + ratio * (segments[i][1] - segments[i + 1][1]);
+        endPoint = {segments[i][0], y};
+      } else {
+        int x =
+            segments[i + 1][0] + ratio * (segments[i][0] - segments[i + 1][0]);
+        endPoint = {x, segments[i][1]};
+      }
+    }
+  }
+
+  if (startSegmentIdx != -1 && endSegmentIdx != -1) {
+    result.push_back(startPoint);
+
+    if (startSegmentIdx > endSegmentIdx) {
+      for (int i = startSegmentIdx; i > endSegmentIdx; --i) {
+        result.push_back(segments[i]);
+      }
+    } else if (endSegmentIdx > startSegmentIdx) {
+      for (int i = startSegmentIdx + 1; i <= endSegmentIdx; ++i) {
+        result.push_back(segments[i]);
+      }
+    }
+
+    if (startPoint != endPoint) {
+      result.push_back(endPoint);
+    }
+  }
+
+  return result;
 }
 
 } // namespace JSONTools

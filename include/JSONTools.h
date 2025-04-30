@@ -43,4 +43,8 @@ void writeOutputFile(const std::string &originalFilename,
                      const std::vector<VG::BufPlace> &bufferLocations,
                      const std::map<int, int> &newToOriginalId);
 
+std::vector<std::vector<int>>
+extractSegmentsBetween(const std::vector<std::vector<int>> &segments,
+                       int startDistanceFromChild, int endDistanceFromChild);
+
 } // namespace JSONTools
