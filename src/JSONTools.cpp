@@ -308,6 +308,7 @@ void writeOutputFile(const std::string &originalFilename,
 
   std::map<std::pair<int, int>, std::vector<VG::BufPlace>> bufferGroups;
   for (const auto &bufLoc : bufferLocations) {
+    if (bufLoc.ParentID == 0 && bufLoc.ChildID == 0) continue;
     int originalParentId = newToOriginalId.at(bufLoc.ParentID);
     int originalChildId = newToOriginalId.at(bufLoc.ChildID);
     bufferGroups[{originalParentId, originalChildId}].push_back(bufLoc);
