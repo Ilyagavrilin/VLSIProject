@@ -164,23 +164,29 @@ std::list<Params> BufferInsertVG::mergeBranch(std::list<Params> &First,
                                               std::list<Params> &Second,
                                               Node *Parent) {
   std::list<Params> Result;
-  auto FirstBr = First.begin();
-  auto SecondBr = Second.begin();
-  while (FirstBr != First.end() && SecondBr != Second.end()) {
-    auto C = FirstBr->C + SecondBr->C;
-    // It is works because both branches already sorted by caps
-    auto MinRAT = std::min(FirstBr->RAT, SecondBr->RAT);
-    FirstBr->Buffers.insert(FirstBr->Buffers.end(), SecondBr->Buffers.begin(),
-                            SecondBr->Buffers.end());
-    Params New(C, MinRAT, FirstBr->Buffers);
-    Result.push_back(New);
+  for (auto &FirstBr : First) {
+    for (auto &SecondBr : Second) {
+      auto NewC = FirstBr.C + SecondBr.C;
+      // It is works because both branches already sorted by caps
+      auto NewRAT = std::min(FirstBr.RAT, SecondBr.RAT);
+      std::vector<BufPlace> Bufs;
+      std::copy(FirstBr.Buffers.begin(), FirstBr.Buffers.end(),
+                std::back_inserter(Bufs));
+      std::copy(SecondBr.Buffers.begin(), SecondBr.Buffers.end(),
+                std::back_inserter(Bufs));
 
-    if (FirstBr->RAT == MinRAT)
-      ++FirstBr;
-    else
-      ++SecondBr;
+      Result.push_back(Params{NewC, NewRAT, std::move(Bufs)});
+    }
   }
   return Result;
+}
+
+[[maybe_unused]] static void printSolutions(std::list<Params> &List) {
+  std::cout << "\nList:\n";
+  for (auto El : List)
+    std::cout << " {c= " << El.C << ", rat= " << El.RAT
+              << ", buffs=" << El.Buffers.size() << "\n";
+  std::cout << "\n";
 }
 
 std::list<Params>
@@ -195,6 +201,7 @@ BufferInsertVG::mergeBranches(std::vector<std::list<Params>> &CldParams,
     FirstBr = mergeBranch(FirstBr, *SecondBr, Parent);
     pruneSolutions(FirstBr);
   }
+
   return FirstBr;
 }
 
@@ -210,6 +217,7 @@ std::list<Params> BufferInsertVG::recursiveVanGin(Node *N) {
     Node *Cld = N->Children[i];
     auto LenCld = N->Lens[i];
     auto CldParams = recursiveVanGin(Cld);
+
     if (LenCld == 0) {
       insertBuffer(CldParams, N, Cld, 0);
       pruneSolutions(CldParams);
